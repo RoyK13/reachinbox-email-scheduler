@@ -1,0 +1,175 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EmailStatus {
+  SCHEDULED
+  SENDING
+  SENT
+  FAILED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  googleId  String   @unique
+  email     String
+  name      String
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  slackConnection SlackConnection?
+  campaigns       Campaign[]
+  emails          Email[]
+  senders         Sender[]
+  attachments     Attachment[]
+
+  @@index([email])
+  @@map("users")
+}
+
+/// One Slack workspace connection per user. Reconnect upserts; disconnect deletes.
+model SlackConnection {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  teamId         String
+  teamName       String?
+  slackUserId    String
+  /// AES-256-GCM encrypted bot token. Never returned by any API.
+  accessTokenEnc String
+  scope          String?
+  connectedAt    DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("slack_connections")
+}
+
+/// SMTP sender account owned by a tenant (user). For the demo, each user's
+/// senders are provisioned from ETHEREAL_SENDERS_JSON on login and on startup,
+/// so every per-sender Redis key (send slot, hourly counter) is tenant-scoped.
+model Sender {
+  id              String   @id @default(uuid())
+  userId          String
+  name            String
+  email           String
+  smtpHost        String
+  smtpPort        Int
+  smtpUser        String
+  /// AES-256-GCM encrypted SMTP password. Never returned by any API.
+  smtpPasswordEnc String
+  smtpSecure      Boolean  @default(false)
+  enabled         Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emails Email[]
+
+  @@unique([userId, email])
+  @@index([userId])
+  @@map("senders")
+}
+
+/// One POST /api/emails/schedule request. Holds the per-campaign settings.
+model Campaign {
+  id                   String   @id @default(uuid())
+  userId               String
+  idempotencyKey       String
+  /// sha256 of the normalized request; detects key reuse with a different payload.
+  requestHash          String
+  subject              String
+  bodyHtml             String
+  bodyText             String
+  startTime            DateTime
+  delayBetweenEmailsMs Int
+  hourlyLimit          Int
+  totalRecipients      Int
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emails      Email[]
+  attachments Attachment[]
+
+  @@unique([userId, idempotencyKey])
+  @@map("campaigns")
+}
+
+/// File attached to a campaign (the compose paperclip). Uploaded first, then
+/// linked to exactly one campaign when it is scheduled. Stored in PostgreSQL
+/// so every worker, on any host, can read it when sending.
+model Attachment {
+  id          String   @id @default(uuid())
+  userId      String
+  campaignId  String?
+  filename    String
+  contentType String
+  size        Int
+  sha256      String
+  data        Bytes
+  createdAt   DateTime @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([userId, campaignId])
+  @@index([campaignId])
+  @@map("attachments")
+}
+
+model Email {
+  id         String @id
+  userId     String
+  campaignId String
+  senderId   String
+
+  recipientEmail String
+  subject        String
+  body           String
+
+  scheduledAt DateTime
+  sentAt      DateTime?
+  failedAt    DateTime?
+
+  status       EmailStatus @default(SCHEDULED)
+  errorMessage String?
+
+  /// Deterministic BullMQ job id: "email-<id>".
+  bullJobId      String @unique
+  /// "<campaignId>:<sequenceNumber>" — one row per recipient per request.
+  idempotencyKey String @unique
+
+  /// Position of the recipient within its schedule request (0-based).
+  sequenceNumber Int
+
+  sendStartedAt      DateTime?
+  messageId          String?
+  etherealPreviewUrl String?
+
+  attemptCount  Int       @default(0)
+  lastAttemptAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  sender   Sender   @relation(fields: [senderId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([recipientEmail])
+  @@index([senderId])
+  @@index([campaignId])
+  @@index([userId, status, scheduledAt])
+  @@index([senderId, status, sequenceNumber])
+  @@map("emails")
+}
