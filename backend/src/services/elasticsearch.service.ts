@@ -7,16 +7,21 @@ import type { Paginated } from '../types/api';
 import type { EmailListItem, EmailListKind, EmailSearchDocument } from '../types/email';
 import { errorMessage } from '../utils/errors';
 
-export const esClient = new Client({ node: env.ELASTICSEARCH_URL, requestTimeout: 10_000, maxRetries: 2 });
+export const esClient = new Client({
+  node: env.ELASTICSEARCH_URL,
+  ...(env.ELASTICSEARCH_API_KEY ? { auth: { apiKey: env.ELASTICSEARCH_API_KEY } } : {}),
+  requestTimeout: 10_000,
+  maxRetries: 2,
+});
 
 export const LIST_STATUSES: Record<EmailListKind, EmailStatus[]> = {
   scheduled: ['SCHEDULED', 'SENDING'],
   sent: ['SENT', 'FAILED'],
 };
 
+// No shard/replica counts: Elastic Cloud Serverless rejects them, and the
+// defaults are fine for self-managed clusters too.
 const INDEX_SETTINGS: estypes.IndicesIndexSettings = {
-  number_of_shards: 1,
-  number_of_replicas: 0,
   analysis: {
     normalizer: {
       lowercase_normalizer: { type: 'custom', filter: ['lowercase', 'asciifolding'] },

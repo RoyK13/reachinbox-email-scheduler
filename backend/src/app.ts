@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import { env, isProduction } from './config/env';
 import { BULL_BOARD_PATH, createBullBoardRouter } from './lib/bull-board';
+import { createFrontendRouter } from './lib/frontend';
 import { logger } from './lib/logger';
 import { requireAuthOrRedirect } from './middleware/auth.middleware';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
@@ -47,6 +48,10 @@ export function createApp(): Express {
   }
 
   app.use('/api', helmet(), apiRouter);
+
+  // Single-service deployments: the built frontend is served from here too.
+  const frontend = createFrontendRouter();
+  if (frontend) app.use(frontend);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

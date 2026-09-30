@@ -15,7 +15,15 @@ import type {
   UploadedAttachment,
 } from '../types';
 
-export const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:4000').replace(/\/$/, '');
+/**
+ * Backend base URL. Local dev defaults to the API on :4000. Production builds
+ * default to the same origin ("" → relative /api): the backend serves the
+ * built frontend itself, so the session cookie stays first-party.
+ */
+export const API_URL = (import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:4000' : '')).replace(
+  /\/$/,
+  '',
+);
 
 /** Session lives in an HTTP-only cookie; withCredentials sends it cross-port. */
 const http = axios.create({ baseURL: `${API_URL}/api`, withCredentials: true, timeout: 60_000 });

@@ -53,6 +53,8 @@ const envSchema = z.object({
   REDIS_URL: z.string().min(1),
   ELASTICSEARCH_URL: z.string().url(),
   ELASTICSEARCH_INDEX: z.string().min(1).default('emails'),
+  /** Elastic Cloud API key (base64 "id:key"). Optional: local Docker ES has no auth. */
+  ELASTICSEARCH_API_KEY: z.string().trim().min(1).optional(),
 
   SESSION_SECRET: z.string().min(16, 'must be at least 16 characters'),
   TOKEN_ENCRYPTION_KEY: z
@@ -74,6 +76,8 @@ const envSchema = z.object({
   MAX_RECIPIENTS_PER_REQUEST: z.coerce.number().int().min(1).max(100_000).default(10_000),
 
   BULL_BOARD_ENABLED: booleanString.default('true'),
+  /** Built frontend to serve (single-service deploys). Default: ../frontend/dist if it exists. */
+  FRONTEND_DIST_DIR: z.string().min(1).optional(),
   QUEUE_NAME: z.string().min(1).default('email-send'),
 
   ETHEREAL_SENDERS_JSON: sendersJson,

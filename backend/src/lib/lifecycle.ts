@@ -29,7 +29,7 @@ export async function connectInfrastructure(): Promise<void> {
   logger.info({ index: searchService.index }, 'elasticsearch ready');
 }
 
-type Closer = { name: string; close: () => Promise<unknown> | unknown };
+export type Closer = { name: string; close: () => Promise<unknown> | unknown };
 
 /** SIGINT/SIGTERM → close resources in order, then exit. */
 export function onShutdown(closers: Closer[]): void {

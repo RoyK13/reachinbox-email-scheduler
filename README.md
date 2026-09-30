@@ -102,8 +102,32 @@ Production-style run:
 ```bash
 cd backend && npm run build && npm run start          # API
 cd backend && npm run start:worker                    # worker (run 1..N of these)
+cd backend && npm run start:all                       # or: API + worker + built frontend in one process
 cd frontend && npm run build && npm run preview
 ```
+
+### Deploy to Railway (single service)
+
+The repo root has a `Dockerfile` and `railway.json`. One container runs **API + email worker + the built frontend** (`backend/dist/all.js`) on one domain, and runs `prisma migrate deploy` on every start.
+
+1. https://railway.com → **New Project → Deploy from GitHub repo** → pick this repo. It builds from the `Dockerfile`; the health check is `/api/health`.
+2. In the same project: **+ Create → Database → PostgreSQL**, and **+ Create → Database → Redis**.
+3. On the app service → **Variables**, add everything from `backend/.env`, except:
+   ```env
+   NODE_ENV=production
+   DATABASE_URL=${{Postgres.DATABASE_URL}}
+   REDIS_URL=${{Redis.REDIS_URL}}
+   ELASTICSEARCH_URL=https://<your-project>.es.<region>.elastic.cloud:443
+   ELASTICSEARCH_API_KEY=<Elastic Cloud API key>
+   FRONTEND_URL=https://<your-app>.up.railway.app
+   GOOGLE_CALLBACK_URL=https://<your-app>.up.railway.app/api/auth/google/callback
+   SLACK_REDIRECT_URI=https://<your-app>.up.railway.app/api/slack/callback
+   ```
+   Don't set `PORT`; Railway provides it. Use new random `SESSION_SECRET` / `TOKEN_ENCRYPTION_KEY` values.
+4. **Settings → Networking → Generate Domain** gives you `<your-app>.up.railway.app`. Put it into the three URLs above.
+5. Google Cloud Console → your OAuth client: add `https://<your-app>.up.railway.app` as a JavaScript origin and `…/api/auth/google/callback` as a redirect URI. For Slack, add `…/api/slack/callback`.
+
+Pushing to `main` redeploys automatically. To scale out later, add more services from the same repo with the start command `node dist/worker.js`; workers coordinate only through Redis and Postgres. Try the image locally with `docker build -t reachinbox .`.
 
 > **npm 11 note:** newer npm versions block dependency install scripts by default. `backend/package.json` and `frontend/package.json` already contain an `allowScripts` allow-list for the packages that need them (Prisma engines, esbuild, msgpackr). If your npm prints an `allow-scripts` warning, run `npm approve-scripts <pkg>` for the listed packages and then `npm rebuild`.
 
@@ -123,6 +147,7 @@ cd frontend && npm run build && npm run preview
 | `REDIS_URL` | ✔ | `redis://localhost:6379` | BullMQ, rate limiter, sessions |
 | `ELASTICSEARCH_URL` | ✔ | `http://localhost:9200` | Elasticsearch |
 | `ELASTICSEARCH_INDEX` | | `emails` | Index name |
+| `ELASTICSEARCH_API_KEY` | | base64 `id:key` | Elastic Cloud (incl. Serverless) API key; unset for local Docker ES |
 | `SESSION_SECRET` | ✔ | ≥ 16 random chars | Signs the session cookie |
 | `TOKEN_ENCRYPTION_KEY` | ✔ | 32 bytes, base64 | AES-256-GCM encryption at rest for Slack tokens and SMTP passwords |
 | `GOOGLE_CLIENT_ID` | ✔ | `…apps.googleusercontent.com` | Google OAuth |

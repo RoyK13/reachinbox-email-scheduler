@@ -9,6 +9,8 @@ import { logger } from './logger';
 export const redisOptions: RedisOptions = {
   maxRetriesPerRequest: null,
   enableReadyCheck: true,
+  // Resolve both IPv4 and IPv6 (Railway's private network is IPv6-only).
+  family: 0,
 };
 
 export function createRedis(name: string): Redis {
